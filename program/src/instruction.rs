@@ -4,7 +4,16 @@ use std::convert::TryInto;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppInstruction {
-  SayHello { amount: u32 },
+  InitializeStakePool { reward: u64 },
+  Stake { amount: u64 },
+  Unstake { amount: u64 },
+  Havest { amount: u64 },
+  FreezePool,
+  ThawPool,
+  Seed { amount: u64 },
+  Unseed { amount: u64 },
+  Earn { amount: u64 },
+  TransferPoolOwnership,
 }
 impl AppInstruction {
   pub fn unpack(instruction: &[u8]) -> Result<Self, ProgramError> {
@@ -13,13 +22,64 @@ impl AppInstruction {
       .ok_or(AppError::InvalidInstruction)?;
     Ok(match tag {
       0 => {
-        let amount = rest
-          .get(..4)
+        let reward = rest
+          .get(..8)
           .and_then(|slice| slice.try_into().ok())
-          .map(u32::from_le_bytes)
+          .map(u64::from_le_bytes)
           .ok_or(AppError::InvalidInstruction)?;
-        Self::SayHello { amount }
+        Self::InitializeStakePool { reward }
       }
+      1 => {
+        let amount = rest
+          .get(..8)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u64::from_le_bytes)
+          .ok_or(AppError::InvalidInstruction)?;
+        Self::Stake { amount }
+      }
+      2 => {
+        let amount = rest
+          .get(..8)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u64::from_le_bytes)
+          .ok_or(AppError::InvalidInstruction)?;
+        Self::Unstake { amount }
+      }
+      4 => {
+        let amount = rest
+          .get(..8)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u64::from_le_bytes)
+          .ok_or(AppError::InvalidInstruction)?;
+        Self::Havest { amount }
+      }
+      5 => Self::FreezePool,
+      6 => Self::ThawPool,
+      7 => {
+        let amount = rest
+          .get(..8)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u64::from_le_bytes)
+          .ok_or(AppError::InvalidInstruction)?;
+        Self::Seed { amount }
+      }
+      8 => {
+        let amount = rest
+          .get(..8)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u64::from_le_bytes)
+          .ok_or(AppError::InvalidInstruction)?;
+        Self::Unseed { amount }
+      }
+      9 => {
+        let amount = rest
+          .get(..8)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u64::from_le_bytes)
+          .ok_or(AppError::InvalidInstruction)?;
+        Self::Earn { amount }
+      }
+      10 => Self::TransferPoolOwnership,
       _ => return Err(AppError::InvalidInstruction.into()),
     })
   }

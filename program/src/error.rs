@@ -15,10 +15,28 @@ pub use solana_program::program_error::PrintProgramError as PrintAppError;
 pub enum AppError {
   #[error("Invalid instruction")]
   InvalidInstruction,
+  #[error("Invalid owner")]
+  InvalidOwner,
   #[error("Incorrect program id")]
   IncorrectProgramId,
+  #[error("Already constructed")]
+  ConstructorOnce,
+  #[error("Not yet initialized")]
+  NotInitialized,
   #[error("Operation overflowed")]
   Overflow,
+  #[error("Pool unmatched")]
+  UnmatchedPool,
+  #[error("Pool frozen")]
+  FrozenPool,
+  #[error("Zero value")]
+  ZeroValue,
+  #[error("Insufficient funds")]
+  InsufficientFunds,
+  #[error("Invalid mint")]
+  InvalidMint,
+  #[error("Exceed limit")]
+  ExceedLimit,
 }
 
 impl From<AppError> for ProgramError {
@@ -40,8 +58,17 @@ impl PrintProgramError for AppError {
   {
     match self {
       AppError::InvalidInstruction => msg!("Error: Invalid instruction"),
+      AppError::InvalidOwner => msg!("Error: Invalid owner"),
       AppError::IncorrectProgramId => msg!("Error: Incorrect program id"),
+      AppError::ConstructorOnce => msg!("Error: Already constructed"),
+      AppError::NotInitialized => msg!("Error: Not yet initialized"),
       AppError::Overflow => msg!("Error: Operation overflowed"),
+      AppError::UnmatchedPool => msg!("Error: Pool unmatched"),
+      AppError::FrozenPool => msg!("Error: Pool frozen"),
+      AppError::ZeroValue => msg!("Error: Zero value"),
+      AppError::InsufficientFunds => msg!("Error: Insufficient funds"),
+      AppError::InvalidMint => msg!("Error: Invalid mint"),
+      AppError::ExceedLimit => msg!("Error: Exceed limit"),
     }
   }
 }
