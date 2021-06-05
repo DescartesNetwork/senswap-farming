@@ -1,17 +1,25 @@
 use crate::error::AppError;
-use crate::helper::pubutil::Boolean;
+use crate::helper::{pattern::Pattern, pubutil::Boolean};
 use crate::instruction::AppInstruction;
 use crate::interfaces::{xsplata::XSPLATA, xsplt::XSPLT};
 use crate::schema::{
+  account::Account,
+  debt::Debt,
   mint::Mint,
   stake_pool::{StakePool, StakePoolState},
 };
 use solana_program::{
   account_info::{next_account_info, AccountInfo},
+  clock::Clock,
   entrypoint::ProgramResult,
   msg,
+  program::{invoke, invoke_signed},
+  program_error::ProgramError,
   program_pack::{IsInitialized, Pack},
   pubkey::{Pubkey, PubkeyError},
+  rent::Rent,
+  system_instruction,
+  sysvar::Sysvar,
 };
 
 pub struct Processor {}
@@ -29,6 +37,11 @@ impl Processor {
         Self::initialize_stake_pool(reward, program_id, accounts)
       }
 
+      AppInstruction::InitializeAccount {} => {
+        msg!("Calling InitializeAccount function");
+        Self::initialize_account(program_id, accounts)
+      }
+
       AppInstruction::Stake { amount } => {
         msg!("Calling Stake function");
         Self::stake(amount, program_id, accounts)
@@ -39,9 +52,9 @@ impl Processor {
         Self::unstake(amount, program_id, accounts)
       }
 
-      AppInstruction::Havest { amount } => {
+      AppInstruction::Havest {} => {
         msg!("Calling Havest function");
-        Self::havest(amount, program_id, accounts)
+        Self::havest(program_id, accounts)
       }
 
       AppInstruction::FreezePool {} => {
@@ -110,7 +123,10 @@ impl Processor {
       return Err(AppError::ConstructorOnce.into());
     }
     if *proof_acc.key != program_id.xor(&(stake_pool_acc.key.xor(treasurer.key))) {
-      return Err(AppError::InvalidMint.into());
+      return Err(AppError::UnmatchedPool.into());
+    }
+    if reward == 0 {
+      return Err(AppError::ZeroValue.into());
     }
 
     // Initialize treasury token
@@ -151,14 +167,99 @@ impl Processor {
     // Update stake pool data
     stake_pool_data.owner = *owner.key;
     stake_pool_data.state = StakePoolState::Initialized;
+    stake_pool_data.genesis_timestamp = Self::current_timestamp()?;
     stake_pool_data.mint_share = *mint_share_acc.key;
     stake_pool_data.vault = *vault_acc.key;
-    stake_pool_data.total_token_locked = 0;
+    stake_pool_data.total_shares = 0;
     stake_pool_data.mint_token = *mint_token_acc.key;
     stake_pool_data.treasury_token = *treasury_token_acc.key;
     stake_pool_data.reward = reward;
-    stake_pool_data.debt = 0;
+    stake_pool_data.compensation = 0;
     stake_pool_data.treasury_sen = *treasury_sen_acc.key;
+
+    Ok(())
+  }
+
+  pub fn initialize_account(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let payer = next_account_info(accounts_iter)?;
+    let owner = next_account_info(accounts_iter)?;
+    let stake_pool_acc = next_account_info(accounts_iter)?;
+    let mint_share_acc = next_account_info(accounts_iter)?;
+
+    let share_acc = next_account_info(accounts_iter)?;
+    let debt_acc = next_account_info(accounts_iter)?;
+
+    let system_program = next_account_info(accounts_iter)?;
+    let splt_program = next_account_info(accounts_iter)?;
+    let sysvar_rent_acc = next_account_info(accounts_iter)?;
+    let splata_program = next_account_info(accounts_iter)?;
+
+    Self::is_program(program_id, &[stake_pool_acc, debt_acc])?;
+    Self::is_signer(&[payer])?;
+
+    StakePool::unpack(&stake_pool_acc.data.borrow())?;
+    let share_data = Account::unpack_unchecked(&share_acc.data.borrow())?;
+    let mut debt_data = Debt::unpack_unchecked(&debt_acc.data.borrow())?;
+    if debt_data.is_initialized() || share_data.is_initialized() {
+      return Err(AppError::ConstructorOnce.into());
+    }
+
+    // Initilized share account
+    XSPLATA::initialize_account(
+      payer,
+      share_acc,
+      owner,
+      mint_share_acc,
+      system_program,
+      splt_program,
+      sysvar_rent_acc,
+      splata_program,
+      &[],
+    )?;
+
+    // Validate debt account address
+    let (key, bump_seed) = Pubkey::find_program_address(
+      &[
+        &owner.key.to_bytes(),
+        &stake_pool_acc.key.to_bytes(),
+        &program_id.to_bytes(),
+      ],
+      program_id,
+    );
+    let seed: &[&[u8]] = &[
+      &owner.key.to_bytes(),
+      &stake_pool_acc.key.to_bytes(),
+      &program_id.to_bytes(),
+      &[bump_seed],
+    ];
+    if key != *debt_acc.key {
+      return Err(AppError::InvalidOwner.into());
+    }
+    // Rent space
+    let rent = &Rent::from_account_info(sysvar_rent_acc)?;
+    let required_lamports = rent
+      .minimum_balance(Debt::LEN)
+      .max(1)
+      .saturating_sub(debt_acc.lamports());
+    if required_lamports > 0 {
+      invoke(
+        &system_instruction::transfer(&payer.key, debt_acc.key, required_lamports),
+        &[payer.clone(), debt_acc.clone(), system_program.clone()],
+      )?;
+    }
+    // Allocate space
+    invoke_signed(
+      &system_instruction::allocate(debt_acc.key, Debt::LEN as u64),
+      &[debt_acc.clone(), system_program.clone()],
+      &[&seed],
+    )?;
+    // Assign data
+    debt_data.stake_pool = *stake_pool_acc.key;
+    debt_data.owner = *owner.key;
+    debt_data.account = *share_acc.key;
+    debt_data.debt = 0;
+    debt_data.is_initialized = true;
 
     Ok(())
   }
@@ -167,6 +268,115 @@ impl Processor {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
+    let mint_share_acc = next_account_info(accounts_iter)?;
+
+    let src_acc = next_account_info(accounts_iter)?;
+    let treasury_token_acc = next_account_info(accounts_iter)?;
+
+    let share_acc = next_account_info(accounts_iter)?;
+    let debt_acc = next_account_info(accounts_iter)?;
+
+    let treasurer = next_account_info(accounts_iter)?;
+    let splt_program = next_account_info(accounts_iter)?;
+
+    Self::is_program(program_id, &[stake_pool_acc, debt_acc])?;
+    Self::is_signer(&[owner])?;
+    Self::is_debt_owner(owner, debt_acc, stake_pool_acc, share_acc)?;
+
+    let mut stake_pool_data = StakePool::unpack(&stake_pool_acc.data.borrow())?;
+    let share_data = Account::unpack(&share_acc.data.borrow())?;
+    let mut debt_data = Debt::unpack(&debt_acc.data.borrow())?;
+    let seed: &[&[&[u8]]] = &[&[&Self::safe_seed(stake_pool_acc, treasurer, program_id)?[..]]];
+    if stake_pool_data.mint_share != *mint_share_acc.key
+      || stake_pool_data.treasury_token != *treasury_token_acc.key
+    {
+      return Err(AppError::UnmatchedPool.into());
+    }
+    if stake_pool_data.is_frozen() {
+      return Err(AppError::FrozenPool.into());
+    }
+    if amount == 0 {
+      return Err(AppError::ZeroValue.into());
+    }
+
+    // Stake token
+    XSPLT::transfer(
+      amount,
+      src_acc,
+      treasury_token_acc,
+      owner,
+      splt_program,
+      &[],
+    )?;
+
+    // Get the basics
+    let shares = share_data.amount;
+    let debt = debt_data.debt;
+    let compensation = stake_pool_data.compensation;
+    let delay = Self::estimate_delay(stake_pool_data.genesis_timestamp)?;
+    let reward = stake_pool_data.reward;
+    let current_total_shares = stake_pool_data.total_shares;
+    // Fully havest
+    let next_total_shares = current_total_shares; // Havest doesn't change the total shares
+    let (shares, debt, compensation) = Pattern::fully_havest(
+      shares,
+      debt,
+      compensation,
+      delay,
+      reward,
+      current_total_shares,
+      next_total_shares,
+    )
+    .ok_or(AppError::Overflow)?;
+    // Fully unstake
+    let next_total_shares = current_total_shares
+      .checked_sub(shares)
+      .ok_or(AppError::Overflow)?;
+    let (shares, debt, compensation) = Pattern::fully_unstake(
+      shares,
+      debt,
+      compensation,
+      delay,
+      reward,
+      current_total_shares,
+      next_total_shares,
+    )
+    .ok_or(AppError::Overflow)?;
+    // Fully stake
+    let current_total_shares = next_total_shares;
+    let next_total_shares = current_total_shares
+      .checked_add(share_data.amount)
+      .ok_or(AppError::Overflow)?
+      .checked_add(amount)
+      .ok_or(AppError::Overflow)?;
+    let (_shares, debt, compensation) = Pattern::fully_stake(
+      shares,
+      debt,
+      compensation,
+      delay,
+      reward,
+      current_total_shares,
+      next_total_shares,
+    )
+    .ok_or(AppError::Overflow)?;
+
+    // Mint share
+    XSPLT::mint_to(
+      amount,
+      mint_share_acc,
+      share_acc,
+      treasurer,
+      splt_program,
+      seed,
+    )?;
+
+    // Debt account
+    debt_data.debt = debt;
+    Debt::pack(debt_data, &mut debt_acc.data.borrow_mut())?;
+    // Stake pool account
+    stake_pool_data.total_shares = next_total_shares;
+    stake_pool_data.compensation = compensation;
+    StakePool::pack(stake_pool_data, &mut stake_pool_acc.data.borrow_mut())?;
 
     Ok(())
   }
@@ -175,14 +385,201 @@ impl Processor {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
+    let mint_share_acc = next_account_info(accounts_iter)?;
+
+    let dst_acc = next_account_info(accounts_iter)?;
+    let treasury_token_acc = next_account_info(accounts_iter)?;
+
+    let share_acc = next_account_info(accounts_iter)?;
+    let debt_acc = next_account_info(accounts_iter)?;
+
+    let dst_sen_acc = next_account_info(accounts_iter)?;
+    let treasury_sen_acc = next_account_info(accounts_iter)?;
+
+    let treasurer = next_account_info(accounts_iter)?;
+    let splt_program = next_account_info(accounts_iter)?;
+
+    Self::is_program(program_id, &[stake_pool_acc, debt_acc])?;
+    Self::is_signer(&[owner])?;
+    Self::is_debt_owner(owner, debt_acc, stake_pool_acc, share_acc)?;
+
+    let mut stake_pool_data = StakePool::unpack(&stake_pool_acc.data.borrow())?;
+    let share_data = Account::unpack(&share_acc.data.borrow())?;
+    let mut debt_data = Debt::unpack(&debt_acc.data.borrow())?;
+    let seed: &[&[&[u8]]] = &[&[&Self::safe_seed(stake_pool_acc, treasurer, program_id)?[..]]];
+    if stake_pool_data.mint_share != *mint_share_acc.key
+      || stake_pool_data.treasury_token != *treasury_token_acc.key
+      || stake_pool_data.treasury_sen != *treasury_sen_acc.key
+    {
+      return Err(AppError::UnmatchedPool.into());
+    }
+    if stake_pool_data.is_frozen() {
+      return Err(AppError::FrozenPool.into());
+    }
+    if amount == 0 {
+      return Err(AppError::ZeroValue.into());
+    }
+
+    // Get the basics
+    let shares = share_data.amount;
+    let debt = debt_data.debt;
+    let compensation = stake_pool_data.compensation;
+    let delay = Self::estimate_delay(stake_pool_data.genesis_timestamp)?;
+    let reward = stake_pool_data.reward;
+    let current_total_shares = stake_pool_data.total_shares;
+    // Fully havest
+    let next_total_shares = current_total_shares; // Havest doesn't change the total shares
+    let (shares, debt, compensation) = Pattern::fully_havest(
+      shares,
+      debt,
+      compensation,
+      delay,
+      reward,
+      current_total_shares,
+      next_total_shares,
+    )
+    .ok_or(AppError::Overflow)?;
+    let yeild = debt.checked_sub(debt_data.debt).ok_or(AppError::Overflow)?;
+    // Fully unstake
+    let next_total_shares = current_total_shares
+      .checked_sub(shares)
+      .ok_or(AppError::Overflow)?;
+    let (shares, debt, compensation) = Pattern::fully_unstake(
+      shares,
+      debt,
+      compensation,
+      delay,
+      reward,
+      current_total_shares,
+      next_total_shares,
+    )
+    .ok_or(AppError::Overflow)?;
+    // Fully stake
+    let current_total_shares = next_total_shares;
+    let next_total_shares = current_total_shares
+      .checked_add(share_data.amount)
+      .ok_or(AppError::Overflow)?
+      .checked_sub(amount)
+      .ok_or(AppError::Overflow)?;
+    let (_shares, debt, compensation) = Pattern::fully_stake(
+      shares,
+      debt,
+      compensation,
+      delay,
+      reward,
+      current_total_shares,
+      next_total_shares,
+    )
+    .ok_or(AppError::Overflow)?;
+
+    // Havest
+    XSPLT::transfer(
+      yeild,
+      treasury_sen_acc,
+      dst_sen_acc,
+      treasurer,
+      splt_program,
+      seed,
+    )?;
+    // Unstake token
+    XSPLT::burn(
+      amount,
+      share_acc,
+      mint_share_acc,
+      treasurer,
+      splt_program,
+      seed,
+    )?;
+    XSPLT::transfer(
+      amount,
+      treasury_token_acc,
+      dst_acc,
+      treasurer,
+      splt_program,
+      seed,
+    )?;
+
+    // Debt account
+    debt_data.debt = debt;
+    Debt::pack(debt_data, &mut debt_acc.data.borrow_mut())?;
+    // Stake pool account
+    stake_pool_data.total_shares = next_total_shares;
+    stake_pool_data.compensation = compensation;
+    StakePool::pack(stake_pool_data, &mut stake_pool_acc.data.borrow_mut())?;
 
     Ok(())
   }
 
-  pub fn havest(amount: u64, program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+  pub fn havest(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
+    let mint_share_acc = next_account_info(accounts_iter)?;
+
+    let share_acc = next_account_info(accounts_iter)?;
+    let debt_acc = next_account_info(accounts_iter)?;
+
+    let dst_sen_acc = next_account_info(accounts_iter)?;
+    let treasury_sen_acc = next_account_info(accounts_iter)?;
+
+    let treasurer = next_account_info(accounts_iter)?;
+    let splt_program = next_account_info(accounts_iter)?;
+
+    Self::is_program(program_id, &[stake_pool_acc, debt_acc])?;
+    Self::is_signer(&[owner])?;
+    Self::is_debt_owner(owner, debt_acc, stake_pool_acc, share_acc)?;
+
+    let mut stake_pool_data = StakePool::unpack(&stake_pool_acc.data.borrow())?;
+    let share_data = Account::unpack(&share_acc.data.borrow())?;
+    let mut debt_data = Debt::unpack(&debt_acc.data.borrow())?;
+    let seed: &[&[&[u8]]] = &[&[&Self::safe_seed(stake_pool_acc, treasurer, program_id)?[..]]];
+    if stake_pool_data.mint_share != *mint_share_acc.key
+      || stake_pool_data.treasury_sen != *treasury_sen_acc.key
+    {
+      return Err(AppError::UnmatchedPool.into());
+    }
+    if stake_pool_data.is_frozen() {
+      return Err(AppError::FrozenPool.into());
+    }
+
+    // Get the basics
+    let shares = share_data.amount;
+    let debt = debt_data.debt;
+    let compensation = stake_pool_data.compensation;
+    let delay = Self::estimate_delay(stake_pool_data.genesis_timestamp)?;
+    let reward = stake_pool_data.reward;
+    let current_total_shares = stake_pool_data.total_shares;
+    // Fully havest
+    let next_total_shares = current_total_shares; // Havest doesn't change the total shares
+    let (_shares, debt, compensation) = Pattern::fully_havest(
+      shares,
+      debt,
+      compensation,
+      delay,
+      reward,
+      current_total_shares,
+      next_total_shares,
+    )
+    .ok_or(AppError::Overflow)?;
+    let yeild = debt.checked_sub(debt_data.debt).ok_or(AppError::Overflow)?;
+
+    // Havest
+    XSPLT::transfer(
+      yeild,
+      treasury_sen_acc,
+      dst_sen_acc,
+      treasurer,
+      splt_program,
+      seed,
+    )?;
+
+    // Debt account
+    debt_data.debt = debt;
+    Debt::pack(debt_data, &mut debt_acc.data.borrow_mut())?;
+    // Stake pool account
+    stake_pool_data.total_shares = next_total_shares;
+    stake_pool_data.compensation = compensation;
+    StakePool::pack(stake_pool_data, &mut stake_pool_acc.data.borrow_mut())?;
 
     Ok(())
   }
@@ -361,6 +758,22 @@ impl Processor {
     Ok(())
   }
 
+  pub fn is_debt_owner(
+    owner: &AccountInfo,
+    debt_acc: &AccountInfo,
+    stake_pool_acc: &AccountInfo,
+    share_acc: &AccountInfo,
+  ) -> ProgramResult {
+    let debt_data = Debt::unpack(&debt_acc.data.borrow())?;
+    if debt_data.stake_pool != *stake_pool_acc.key
+      || debt_data.owner != *owner.key
+      || debt_data.account != *share_acc.key
+    {
+      return Err(AppError::InvalidOwner.into());
+    }
+    Ok(())
+  }
+
   pub fn safe_seed(
     seed_acc: &AccountInfo,
     expected_acc: &AccountInfo,
@@ -372,5 +785,17 @@ impl Processor {
       return Err(PubkeyError::InvalidSeeds);
     }
     Ok(seed)
+  }
+
+  pub fn current_timestamp() -> Result<i64, ProgramError> {
+    let clock = Clock::get()?;
+    Ok(clock.unix_timestamp)
+  }
+
+  pub fn estimate_delay(genesis_timestamp: i64) -> Result<u64, ProgramError> {
+    let senconds_for_a_day: i64 = 86400;
+    let current_timestamp = Self::current_timestamp()?;
+    let days = ((current_timestamp - genesis_timestamp) / senconds_for_a_day) as u64;
+    Ok(days)
   }
 }

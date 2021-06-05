@@ -5,9 +5,10 @@ use std::convert::TryInto;
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppInstruction {
   InitializeStakePool { reward: u64 },
+  InitializeAccount,
   Stake { amount: u64 },
   Unstake { amount: u64 },
-  Havest { amount: u64 },
+  Havest,
   FreezePool,
   ThawPool,
   Seed { amount: u64 },
@@ -29,7 +30,8 @@ impl AppInstruction {
           .ok_or(AppError::InvalidInstruction)?;
         Self::InitializeStakePool { reward }
       }
-      1 => {
+      1 => Self::InitializeAccount,
+      2 => {
         let amount = rest
           .get(..8)
           .and_then(|slice| slice.try_into().ok())
@@ -37,7 +39,7 @@ impl AppInstruction {
           .ok_or(AppError::InvalidInstruction)?;
         Self::Stake { amount }
       }
-      2 => {
+      3 => {
         let amount = rest
           .get(..8)
           .and_then(|slice| slice.try_into().ok())
@@ -45,14 +47,7 @@ impl AppInstruction {
           .ok_or(AppError::InvalidInstruction)?;
         Self::Unstake { amount }
       }
-      4 => {
-        let amount = rest
-          .get(..8)
-          .and_then(|slice| slice.try_into().ok())
-          .map(u64::from_le_bytes)
-          .ok_or(AppError::InvalidInstruction)?;
-        Self::Havest { amount }
-      }
+      4 => Self::Havest,
       5 => Self::FreezePool,
       6 => Self::ThawPool,
       7 => {
