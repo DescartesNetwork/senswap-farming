@@ -9,12 +9,12 @@ pub enum AppInstruction {
   Stake { amount: u64 },
   Unstake { amount: u64 },
   Havest,
-  FreezePool,
-  ThawPool,
+  FreezeStakePool,
+  ThawStakePool,
   Seed { amount: u64 },
   Unseed { amount: u64 },
   Earn { amount: u64 },
-  TransferPoolOwnership,
+  TransferStakePoolOwnership,
 }
 impl AppInstruction {
   pub fn unpack(instruction: &[u8]) -> Result<Self, ProgramError> {
@@ -48,8 +48,8 @@ impl AppInstruction {
         Self::Unstake { amount }
       }
       4 => Self::Havest,
-      5 => Self::FreezePool,
-      6 => Self::ThawPool,
+      5 => Self::FreezeStakePool,
+      6 => Self::ThawStakePool,
       7 => {
         let amount = rest
           .get(..8)
@@ -74,7 +74,7 @@ impl AppInstruction {
           .ok_or(AppError::InvalidInstruction)?;
         Self::Earn { amount }
       }
-      10 => Self::TransferPoolOwnership,
+      10 => Self::TransferStakePoolOwnership,
       _ => return Err(AppError::InvalidInstruction.into()),
     })
   }

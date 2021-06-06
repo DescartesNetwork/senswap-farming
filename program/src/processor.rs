@@ -57,14 +57,14 @@ impl Processor {
         Self::havest(program_id, accounts)
       }
 
-      AppInstruction::FreezePool {} => {
-        msg!("Calling FreezePool function");
-        Self::freeze_pool(program_id, accounts)
+      AppInstruction::FreezeStakePool {} => {
+        msg!("Calling FreezeStakePool function");
+        Self::freeze_stake_pool(program_id, accounts)
       }
 
-      AppInstruction::ThawPool {} => {
-        msg!("Calling ThawPool function");
-        Self::thaw_pool(program_id, accounts)
+      AppInstruction::ThawStakePool {} => {
+        msg!("Calling ThawStakePool function");
+        Self::thaw_stake_pool(program_id, accounts)
       }
 
       AppInstruction::Seed { amount } => {
@@ -82,9 +82,9 @@ impl Processor {
         Self::earn(amount, program_id, accounts)
       }
 
-      AppInstruction::TransferPoolOwnership {} => {
-        msg!("Calling TransferPoolOwnership function");
-        Self::transfer_pool_ownership(program_id, accounts)
+      AppInstruction::TransferStakePoolOwnership {} => {
+        msg!("Calling TransferStakePoolOwnership function");
+        Self::transfer_stake_pool_ownership(program_id, accounts)
       }
     }
   }
@@ -142,6 +142,19 @@ impl Processor {
       seed,
     )?;
 
+    // Initialize treasury sen
+    XSPLATA::initialize_account(
+      payer,
+      treasury_sen_acc,
+      treasurer,
+      mint_sen_acc,
+      system_program,
+      splt_program,
+      sysvar_rent_acc,
+      splata_program,
+      seed,
+    )?;
+
     // Initialize mint share
     let mint_token_data = Mint::unpack_unchecked(&mint_token_acc.data.borrow())?;
     XSPLT::initialize_mint(
@@ -176,6 +189,7 @@ impl Processor {
     stake_pool_data.reward = reward;
     stake_pool_data.compensation = 0;
     stake_pool_data.treasury_sen = *treasury_sen_acc.key;
+    StakePool::pack(stake_pool_data, &mut stake_pool_acc.data.borrow_mut())?;
 
     Ok(())
   }
@@ -260,6 +274,7 @@ impl Processor {
     debt_data.account = *share_acc.key;
     debt_data.debt = 0;
     debt_data.is_initialized = true;
+    Debt::pack(debt_data, &mut debt_acc.data.borrow_mut())?;
 
     Ok(())
   }
@@ -624,7 +639,7 @@ impl Processor {
     Ok(())
   }
 
-  pub fn freeze_pool(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+  pub fn freeze_stake_pool(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
@@ -640,7 +655,7 @@ impl Processor {
     Ok(())
   }
 
-  pub fn thaw_pool(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+  pub fn thaw_stake_pool(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
@@ -750,7 +765,10 @@ impl Processor {
     Ok(())
   }
 
-  pub fn transfer_pool_ownership(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+  pub fn transfer_stake_pool_ownership(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+  ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
