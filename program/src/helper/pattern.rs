@@ -2,9 +2,6 @@ use num_bigint::BigUint;
 use num_traits::ToPrimitive;
 
 const PRECISION: u64 = 1000000000000000000; // 10^18
-const FEE: u64 = 2500000; // 0.25%
-const EARNING: u64 = 500000; // 0.05%
-const DECIMALS: u64 = 1000000000; // 10^9
 
 ///
 /// Farming Patterns
@@ -14,14 +11,14 @@ const DECIMALS: u64 = 1000000000; // 10^9
 pub struct Pattern {}
 
 impl Pattern {
-  pub fn fractional_reward(reward: u64, total_shares: u64) -> Option<(BigUint, BigUint)> {
+  pub fn fractionalize_reward(reward: u64, total_shares: u64) -> Option<(BigUint, BigUint)> {
     let precision = BigUint::from(PRECISION);
     let reward = BigUint::from(reward);
     let total_shares = BigUint::from(total_shares);
     if total_shares == BigUint::from(0u64) {
       return None;
     }
-    let fractional_reward = precision.clone() * reward / total_shares;
+    let fractional_reward = precision.clone() * reward.clone() / total_shares.clone();
     Some((fractional_reward, precision))
   }
 
@@ -30,13 +27,13 @@ impl Pattern {
   ///
   pub fn fully_havest(
     shares: u64,
-    debt: u64,
-    compensation: u64,
+    debt: u128,
+    compensation: u128,
     delay: u64,
     reward: u64,
     current_total_shares: u64,
     next_total_shares: u64,
-  ) -> Option<(u64, u64, u64)> {
+  ) -> Option<(u64, u128, u128)> {
     if current_total_shares != next_total_shares {
       return None;
     }
@@ -45,17 +42,17 @@ impl Pattern {
     let compensation = BigUint::from(compensation);
     let delay = BigUint::from(delay);
     // Compute current & next fraction = reward / total shares
-    let (current_fraction, precision) = Self::fractional_reward(reward, current_total_shares)?;
+    let (current_fraction, precision) = Self::fractionalize_reward(reward, current_total_shares)?;
     // Compute next states
     let new_shares = shares.to_u64()?;
     let new_debt = ((current_fraction.clone() * delay.clone() + compensation.clone())
       * shares.clone()
       / precision.clone())
-    .to_u64()?;
+    .to_u128()?;
     if debt > new_debt {
       return None;
     }
-    let new_compensation = compensation.to_u64()?;
+    let new_compensation = compensation.to_u128()?;
     Some((new_shares, new_debt, new_compensation))
   }
 
@@ -64,13 +61,13 @@ impl Pattern {
   ///
   pub fn fully_unstake(
     shares: u64,
-    debt: u64,
-    compensation: u64,
+    debt: u128,
+    compensation: u128,
     delay: u64,
     reward: u64,
     current_total_shares: u64,
     next_total_shares: u64,
-  ) -> Option<(u64, u64, u64)> {
+  ) -> Option<(u64, u128, u128)> {
     if next_total_shares > current_total_shares {
       return None;
     }
@@ -79,20 +76,20 @@ impl Pattern {
     let compensation = BigUint::from(compensation);
     let delay = BigUint::from(delay);
     // Compute current & next fraction = reward / total shares
-    let (current_fraction, precision) = Self::fractional_reward(reward, current_total_shares)?;
-    let (next_fraction, _) = Self::fractional_reward(reward, next_total_shares)?;
+    let (current_fraction, precision) = Self::fractionalize_reward(reward, current_total_shares)?;
+    let (next_fraction, _) = Self::fractionalize_reward(reward, next_total_shares)?;
     // Whether havested
     let expected_debt = ((current_fraction.clone() * delay.clone() + compensation.clone())
       * shares.clone()
       / precision.clone())
-    .to_u64()?;
+    .to_u128()?;
     if debt != expected_debt {
       return None;
     }
     // Compute next states
     let new_compensation = (compensation.clone()
       - (next_fraction.clone() - current_fraction.clone()) * delay.clone() / precision.clone())
-    .to_u64()?;
+    .to_u128()?;
     Some((0, 0, new_compensation))
   }
 
@@ -101,13 +98,13 @@ impl Pattern {
   ///
   pub fn fully_stake(
     shares: u64,
-    debt: u64,
-    compensation: u64,
+    debt: u128,
+    compensation: u128,
     delay: u64,
     reward: u64,
     current_total_shares: u64,
     next_total_shares: u64,
-  ) -> Option<(u64, u64, u64)> {
+  ) -> Option<(u64, u128, u128)> {
     if current_total_shares > next_total_shares || debt != 0 {
       return None;
     }
@@ -115,16 +112,16 @@ impl Pattern {
     let compensation = BigUint::from(compensation);
     let delay = BigUint::from(delay);
     // Compute current & next fraction = reward / total shares
-    let (current_fraction, precision) = Self::fractional_reward(reward, current_total_shares)?;
-    let (next_fraction, _) = Self::fractional_reward(reward, next_total_shares)?;
+    let (current_fraction, precision) = Self::fractionalize_reward(reward, current_total_shares)?;
+    let (next_fraction, _) = Self::fractionalize_reward(reward, next_total_shares)?;
     // Compute next states
     let new_compensation =
       compensation.clone() + (current_fraction.clone() - next_fraction.clone()) * delay.clone();
     let new_debt = ((next_fraction.clone() * delay.clone() + new_compensation.clone())
       * shares.clone()
       / precision.clone())
-    .to_u64()?;
-    let new_compensation = (new_compensation.clone() / precision.clone()).to_u64()?;
+    .to_u128()?;
+    let new_compensation = (new_compensation.clone() / precision.clone()).to_u128()?;
     Some((shares, new_debt, new_compensation))
   }
 }

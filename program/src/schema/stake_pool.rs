@@ -40,7 +40,7 @@ pub struct StakePool {
   pub treasury_token: Pubkey,
 
   pub reward: u64,          // units: SEN / (share * time)
-  pub compensation: u64,    // units: SEN / share
+  pub compensation: u128,   // units: SEN / share
   pub treasury_sen: Pubkey, // SEN Account
 }
 
@@ -73,11 +73,11 @@ impl IsInitialized for StakePool {
 //
 impl Pack for StakePool {
   // Fixed length
-  const LEN: usize = 225;
+  const LEN: usize = 233;
   // Unpack data from [u8] to the data struct
   fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
     msg!("Read stake pool data");
-    let src = array_ref![src, 0, 225];
+    let src = array_ref![src, 0, 233];
     let (
       owner,
       state,
@@ -90,7 +90,7 @@ impl Pack for StakePool {
       reward,
       compensation,
       treasury_sen,
-    ) = array_refs![src, 32, 1, 8, 8, 32, 32, 32, 32, 8, 8, 32];
+    ) = array_refs![src, 32, 1, 8, 8, 32, 32, 32, 32, 8, 16, 32];
     Ok(StakePool {
       owner: Pubkey::new_from_array(*owner),
       state: StakePoolState::try_from_primitive(state[0])
@@ -105,14 +105,14 @@ impl Pack for StakePool {
       treasury_token: Pubkey::new_from_array(*treasury_token),
 
       reward: u64::from_le_bytes(*reward),
-      compensation: u64::from_le_bytes(*compensation),
+      compensation: u128::from_le_bytes(*compensation),
       treasury_sen: Pubkey::new_from_array(*treasury_sen),
     })
   }
   // Pack data from the data struct to [u8]
   fn pack_into_slice(&self, dst: &mut [u8]) {
     msg!("Write stake pool data");
-    let dst = array_mut_ref![dst, 0, 225];
+    let dst = array_mut_ref![dst, 0, 233];
     let (
       dst_owner,
       dst_state,
@@ -125,7 +125,7 @@ impl Pack for StakePool {
       dst_reward,
       dst_compensation,
       dst_treasury_sen,
-    ) = mut_array_refs![dst, 32, 1, 8, 8, 32, 32, 32, 32, 8, 8, 32];
+    ) = mut_array_refs![dst, 32, 1, 8, 8, 32, 32, 32, 32, 8, 16, 32];
     let &StakePool {
       ref owner,
       state,
