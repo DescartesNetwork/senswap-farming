@@ -32,9 +32,9 @@ impl Processor {
   ) -> ProgramResult {
     let instruction = AppInstruction::unpack(instruction_data)?;
     match instruction {
-      AppInstruction::InitializeStakePool { reward } => {
+      AppInstruction::InitializeStakePool { reward, period } => {
         msg!("Calling InitializeStakePool function");
-        Self::initialize_stake_pool(reward, program_id, accounts)
+        Self::initialize_stake_pool(reward, period, program_id, accounts)
       }
 
       AppInstruction::InitializeAccount {} => {
@@ -91,6 +91,7 @@ impl Processor {
 
   pub fn initialize_stake_pool(
     reward: u64,
+    period: u64,
     program_id: &Pubkey,
     accounts: &[AccountInfo],
   ) -> ProgramResult {
@@ -181,12 +182,13 @@ impl Processor {
     stake_pool_data.owner = *owner.key;
     stake_pool_data.state = StakePoolState::Initialized;
     stake_pool_data.genesis_timestamp = Self::current_timestamp()?;
+    stake_pool_data.total_shares = 0;
     stake_pool_data.mint_share = *mint_share_acc.key;
     stake_pool_data.vault = *vault_acc.key;
-    stake_pool_data.total_shares = 0;
     stake_pool_data.mint_token = *mint_token_acc.key;
     stake_pool_data.treasury_token = *treasury_token_acc.key;
     stake_pool_data.reward = reward;
+    stake_pool_data.period = period;
     stake_pool_data.compensation = 0;
     stake_pool_data.treasury_sen = *treasury_sen_acc.key;
     StakePool::pack(stake_pool_data, &mut stake_pool_acc.data.borrow_mut())?;
@@ -209,15 +211,10 @@ impl Processor {
     let sysvar_rent_acc = next_account_info(accounts_iter)?;
     let splata_program = next_account_info(accounts_iter)?;
 
-    Self::is_program(program_id, &[stake_pool_acc, debt_acc])?;
+    Self::is_program(program_id, &[stake_pool_acc])?;
     Self::is_signer(&[payer])?;
 
     StakePool::unpack(&stake_pool_acc.data.borrow())?;
-    let share_data = Account::unpack_unchecked(&share_acc.data.borrow())?;
-    let mut debt_data = Debt::unpack_unchecked(&debt_acc.data.borrow())?;
-    if debt_data.is_initialized() || share_data.is_initialized() {
-      return Err(AppError::ConstructorOnce.into());
-    }
 
     // Initilized share account
     XSPLATA::initialize_account(
@@ -268,7 +265,18 @@ impl Processor {
       &[debt_acc.clone(), system_program.clone()],
       &[&seed],
     )?;
+    // Assign owner to farming program
+    invoke_signed(
+      &system_instruction::assign(debt_acc.key, &program_id),
+      &[debt_acc.clone(), system_program.clone()],
+      &[&seed],
+    )?;
+
     // Assign data
+    let mut debt_data = Debt::unpack_unchecked(&debt_acc.data.borrow())?;
+    if debt_data.is_initialized() {
+      return Err(AppError::ConstructorOnce.into());
+    }
     debt_data.stake_pool = *stake_pool_acc.key;
     debt_data.owner = *owner.key;
     debt_data.account = *share_acc.key;
@@ -328,7 +336,7 @@ impl Processor {
     let shares = share_data.amount;
     let debt = debt_data.debt;
     let compensation = stake_pool_data.compensation;
-    let delay = Self::estimate_delay(stake_pool_data.genesis_timestamp)?;
+    let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
     msg!("Debug: delay={:?} reward={:?}", delay, reward);
     let current_total_shares = stake_pool_data.total_shares;
@@ -381,24 +389,26 @@ impl Processor {
     )
     .ok_or(AppError::Overflow)?;
     msg!(
-      "Debug: (after fully havest) state = ({:?}, {:?}, {:?})",
+      "Debug: (after fully unstake) state = ({:?}, {:?}, {:?})",
       shares,
       debt,
       compensation
     );
     // Fully stake
+    let shares = share_data
+      .amount
+      .checked_add(amount)
+      .ok_or(AppError::Overflow)?;
     let current_total_shares = next_total_shares;
     let next_total_shares = current_total_shares
-      .checked_add(share_data.amount)
-      .ok_or(AppError::Overflow)?
-      .checked_add(amount)
+      .checked_add(shares)
       .ok_or(AppError::Overflow)?;
     msg!(
       "Debug: total shares = ({:?}, {:?})",
       current_total_shares,
       next_total_shares
     );
-    let (_shares, debt, compensation) = Pattern::fully_stake(
+    let (shares, debt, compensation) = Pattern::fully_stake(
       shares,
       debt,
       compensation,
@@ -409,7 +419,7 @@ impl Processor {
     )
     .ok_or(AppError::Overflow)?;
     msg!(
-      "Debug: (after fully havest) state = ({:?}, {:?}, {:?})",
+      "Debug: (after fully stake) state = ({:?}, {:?}, {:?})",
       shares,
       debt,
       compensation
@@ -479,7 +489,7 @@ impl Processor {
     let shares = share_data.amount;
     let debt = debt_data.debt;
     let compensation = stake_pool_data.compensation;
-    let delay = Self::estimate_delay(stake_pool_data.genesis_timestamp)?;
+    let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
     let current_total_shares = stake_pool_data.total_shares;
     // Fully havest
@@ -601,7 +611,7 @@ impl Processor {
     let shares = share_data.amount;
     let debt = debt_data.debt;
     let compensation = stake_pool_data.compensation;
-    let delay = Self::estimate_delay(stake_pool_data.genesis_timestamp)?;
+    let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
     let current_total_shares = stake_pool_data.total_shares;
     // Fully havest
@@ -850,10 +860,10 @@ impl Processor {
     Ok(clock.unix_timestamp)
   }
 
-  pub fn estimate_delay(genesis_timestamp: i64) -> Result<u64, ProgramError> {
-    let senconds_for_a_day: i64 = 86400;
+  pub fn estimate_delay(stake_pool_data: StakePool) -> Result<u64, ProgramError> {
     let current_timestamp = Self::current_timestamp()?;
-    let days = ((current_timestamp - genesis_timestamp) / senconds_for_a_day) as u64;
-    Ok(days)
+    let delay =
+      (current_timestamp - stake_pool_data.genesis_timestamp) as u64 / stake_pool_data.period;
+    Ok(delay)
   }
 }

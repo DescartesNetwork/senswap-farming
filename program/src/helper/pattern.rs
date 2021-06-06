@@ -13,11 +13,11 @@ pub struct Pattern {}
 impl Pattern {
   pub fn fractionalize_reward(reward: u64, total_shares: u64) -> Option<(BigUint, BigUint)> {
     let precision = BigUint::from(PRECISION);
+    if total_shares == 0 {
+      return Some((BigUint::from(0u64), precision));
+    }
     let reward = BigUint::from(reward);
     let total_shares = BigUint::from(total_shares);
-    if total_shares == BigUint::from(0u64) {
-      return None;
-    }
     let fractional_reward = precision.clone() * reward.clone() / total_shares.clone();
     Some((fractional_reward, precision))
   }
@@ -87,9 +87,13 @@ impl Pattern {
       return None;
     }
     // Compute next states
-    let new_compensation = (compensation.clone()
-      - (next_fraction.clone() - current_fraction.clone()) * delay.clone() / precision.clone())
-    .to_u128()?;
+    let new_compensation = if next_fraction == BigUint::from(0u64) {
+      0
+    } else {
+      (compensation.clone()
+        - (next_fraction.clone() - current_fraction.clone()) * delay.clone() / precision.clone())
+      .to_u128()?
+    };
     Some((0, 0, new_compensation))
   }
 
@@ -115,8 +119,11 @@ impl Pattern {
     let (current_fraction, precision) = Self::fractionalize_reward(reward, current_total_shares)?;
     let (next_fraction, _) = Self::fractionalize_reward(reward, next_total_shares)?;
     // Compute next states
-    let new_compensation =
-      compensation.clone() + (current_fraction.clone() - next_fraction.clone()) * delay.clone();
+    let new_compensation = if current_fraction == BigUint::from(0u64) {
+      BigUint::from(0u64)
+    } else {
+      compensation.clone() + (current_fraction.clone() - next_fraction.clone()) * delay.clone()
+    };
     let new_debt = ((next_fraction.clone() * delay.clone() + new_compensation.clone())
       * shares.clone()
       / precision.clone())

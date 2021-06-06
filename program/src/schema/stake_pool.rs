@@ -39,7 +39,8 @@ pub struct StakePool {
   pub mint_token: Pubkey,
   pub treasury_token: Pubkey,
 
-  pub reward: u64,          // units: SEN / (share * time)
+  pub reward: u64,          // units: SEN / (share * seconds)
+  pub period: u64,          // seconds
   pub compensation: u128,   // units: SEN / share
   pub treasury_sen: Pubkey, // SEN Account
 }
@@ -73,11 +74,11 @@ impl IsInitialized for StakePool {
 //
 impl Pack for StakePool {
   // Fixed length
-  const LEN: usize = 233;
+  const LEN: usize = 241;
   // Unpack data from [u8] to the data struct
   fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
     msg!("Read stake pool data");
-    let src = array_ref![src, 0, 233];
+    let src = array_ref![src, 0, 241];
     let (
       owner,
       state,
@@ -88,9 +89,10 @@ impl Pack for StakePool {
       mint_token,
       treasury_token,
       reward,
+      period,
       compensation,
       treasury_sen,
-    ) = array_refs![src, 32, 1, 8, 8, 32, 32, 32, 32, 8, 16, 32];
+    ) = array_refs![src, 32, 1, 8, 8, 32, 32, 32, 32, 8, 8, 16, 32];
     Ok(StakePool {
       owner: Pubkey::new_from_array(*owner),
       state: StakePoolState::try_from_primitive(state[0])
@@ -105,6 +107,7 @@ impl Pack for StakePool {
       treasury_token: Pubkey::new_from_array(*treasury_token),
 
       reward: u64::from_le_bytes(*reward),
+      period: u64::from_le_bytes(*period),
       compensation: u128::from_le_bytes(*compensation),
       treasury_sen: Pubkey::new_from_array(*treasury_sen),
     })
@@ -112,7 +115,7 @@ impl Pack for StakePool {
   // Pack data from the data struct to [u8]
   fn pack_into_slice(&self, dst: &mut [u8]) {
     msg!("Write stake pool data");
-    let dst = array_mut_ref![dst, 0, 233];
+    let dst = array_mut_ref![dst, 0, 241];
     let (
       dst_owner,
       dst_state,
@@ -123,9 +126,10 @@ impl Pack for StakePool {
       dst_mint_token,
       dst_treasury_token,
       dst_reward,
+      dst_period,
       dst_compensation,
       dst_treasury_sen,
-    ) = mut_array_refs![dst, 32, 1, 8, 8, 32, 32, 32, 32, 8, 16, 32];
+    ) = mut_array_refs![dst, 32, 1, 8, 8, 32, 32, 32, 32, 8, 8, 16, 32];
     let &StakePool {
       ref owner,
       state,
@@ -136,6 +140,7 @@ impl Pack for StakePool {
       ref mint_token,
       ref treasury_token,
       reward,
+      period,
       compensation,
       ref treasury_sen,
     } = self;
@@ -148,6 +153,7 @@ impl Pack for StakePool {
     dst_mint_token.copy_from_slice(mint_token.as_ref());
     dst_treasury_token.copy_from_slice(treasury_token.as_ref());
     *dst_reward = reward.to_le_bytes();
+    *dst_period = period.to_le_bytes();
     *dst_compensation = compensation.to_le_bytes();
     dst_treasury_sen.copy_from_slice(treasury_sen.as_ref());
   }

@@ -4,7 +4,7 @@ use std::convert::TryInto;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppInstruction {
-  InitializeStakePool { reward: u64 },
+  InitializeStakePool { reward: u64, period: u64 },
   InitializeAccount,
   Stake { amount: u64 },
   Unstake { amount: u64 },
@@ -28,7 +28,12 @@ impl AppInstruction {
           .and_then(|slice| slice.try_into().ok())
           .map(u64::from_le_bytes)
           .ok_or(AppError::InvalidInstruction)?;
-        Self::InitializeStakePool { reward }
+        let period = rest
+          .get(8..16)
+          .and_then(|slice| slice.try_into().ok())
+          .map(u64::from_le_bytes)
+          .ok_or(AppError::InvalidInstruction)?;
+        Self::InitializeStakePool { reward, period }
       }
       1 => Self::InitializeAccount,
       2 => {
