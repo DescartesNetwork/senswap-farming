@@ -40,7 +40,7 @@ pub struct StakePool {
 
   pub reward: u64,          // units: SEN / (share * seconds)
   pub period: u64,          // seconds
-  pub compensation: u128,   // units: SEN / share
+  pub compensation: i128,   // units: SEN / share, with 1e18 precision
   pub treasury_sen: Pubkey, // SEN Account
 }
 
@@ -105,7 +105,7 @@ impl Pack for StakePool {
 
       reward: u64::from_le_bytes(*reward),
       period: u64::from_le_bytes(*period),
-      compensation: u128::from_le_bytes(*compensation),
+      compensation: i128::from_le_bytes(*compensation),
       treasury_sen: Pubkey::new_from_array(*treasury_sen),
     })
   }
