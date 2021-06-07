@@ -34,7 +34,6 @@ pub struct StakePool {
 
   pub total_shares: u64,
   pub mint_share: Pubkey,
-  pub vault: Pubkey, // SEN Account
 
   pub mint_token: Pubkey,
   pub treasury_token: Pubkey,
@@ -74,25 +73,24 @@ impl IsInitialized for StakePool {
 //
 impl Pack for StakePool {
   // Fixed length
-  const LEN: usize = 241;
+  const LEN: usize = 209;
   // Unpack data from [u8] to the data struct
   fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
     msg!("Read stake pool data");
-    let src = array_ref![src, 0, 241];
+    let src = array_ref![src, 0, 209];
     let (
       owner,
       state,
       genesis_timestamp,
       total_shares,
       mint_share,
-      vault,
       mint_token,
       treasury_token,
       reward,
       period,
       compensation,
       treasury_sen,
-    ) = array_refs![src, 32, 1, 8, 8, 32, 32, 32, 32, 8, 8, 16, 32];
+    ) = array_refs![src, 32, 1, 8, 8, 32, 32, 32, 8, 8, 16, 32];
     Ok(StakePool {
       owner: Pubkey::new_from_array(*owner),
       state: StakePoolState::try_from_primitive(state[0])
@@ -101,7 +99,6 @@ impl Pack for StakePool {
 
       total_shares: u64::from_le_bytes(*total_shares),
       mint_share: Pubkey::new_from_array(*mint_share),
-      vault: Pubkey::new_from_array(*vault),
 
       mint_token: Pubkey::new_from_array(*mint_token),
       treasury_token: Pubkey::new_from_array(*treasury_token),
@@ -115,28 +112,26 @@ impl Pack for StakePool {
   // Pack data from the data struct to [u8]
   fn pack_into_slice(&self, dst: &mut [u8]) {
     msg!("Write stake pool data");
-    let dst = array_mut_ref![dst, 0, 241];
+    let dst = array_mut_ref![dst, 0, 209];
     let (
       dst_owner,
       dst_state,
       dst_genesis_timestamp,
       dst_total_shares,
       dst_mint_share,
-      dst_vault,
       dst_mint_token,
       dst_treasury_token,
       dst_reward,
       dst_period,
       dst_compensation,
       dst_treasury_sen,
-    ) = mut_array_refs![dst, 32, 1, 8, 8, 32, 32, 32, 32, 8, 8, 16, 32];
+    ) = mut_array_refs![dst, 32, 1, 8, 8, 32, 32, 32, 8, 8, 16, 32];
     let &StakePool {
       ref owner,
       state,
       genesis_timestamp,
       total_shares,
       ref mint_share,
-      ref vault,
       ref mint_token,
       ref treasury_token,
       reward,
@@ -149,7 +144,6 @@ impl Pack for StakePool {
     *dst_genesis_timestamp = genesis_timestamp.to_le_bytes();
     *dst_total_shares = total_shares.to_le_bytes();
     dst_mint_share.copy_from_slice(mint_share.as_ref());
-    dst_vault.copy_from_slice(vault.as_ref());
     dst_mint_token.copy_from_slice(mint_token.as_ref());
     dst_treasury_token.copy_from_slice(treasury_token.as_ref());
     *dst_reward = reward.to_le_bytes();

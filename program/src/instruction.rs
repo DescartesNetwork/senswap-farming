@@ -13,7 +13,6 @@ pub enum AppInstruction {
   ThawStakePool,
   Seed { amount: u64 },
   Unseed { amount: u64 },
-  Earn { amount: u64 },
   TransferStakePoolOwnership,
 }
 impl AppInstruction {
@@ -71,15 +70,7 @@ impl AppInstruction {
           .ok_or(AppError::InvalidInstruction)?;
         Self::Unseed { amount }
       }
-      9 => {
-        let amount = rest
-          .get(..8)
-          .and_then(|slice| slice.try_into().ok())
-          .map(u64::from_le_bytes)
-          .ok_or(AppError::InvalidInstruction)?;
-        Self::Earn { amount }
-      }
-      10 => Self::TransferStakePoolOwnership,
+      9 => Self::TransferStakePoolOwnership,
       _ => return Err(AppError::InvalidInstruction.into()),
     })
   }

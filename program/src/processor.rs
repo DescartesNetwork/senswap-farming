@@ -77,11 +77,6 @@ impl Processor {
         Self::unseed(amount, program_id, accounts)
       }
 
-      AppInstruction::Earn { amount } => {
-        msg!("Calling Earn function");
-        Self::earn(amount, program_id, accounts)
-      }
-
       AppInstruction::TransferStakePoolOwnership {} => {
         msg!("Calling TransferStakePoolOwnership function");
         Self::transfer_stake_pool_ownership(program_id, accounts)
@@ -100,7 +95,6 @@ impl Processor {
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
     let mint_share_acc = next_account_info(accounts_iter)?;
-    let vault_acc = next_account_info(accounts_iter)?;
     let proof_acc = next_account_info(accounts_iter)?; // program_id xor treasurer xor stake_pool_id
 
     let mint_token_acc = next_account_info(accounts_iter)?;
@@ -168,23 +162,12 @@ impl Processor {
       seed,
     )?;
 
-    // Initialize vault
-    XSPLT::initialize_account(
-      vault_acc,
-      mint_sen_acc,
-      treasurer,
-      sysvar_rent_acc,
-      splt_program,
-      seed,
-    )?;
-
     // Update stake pool data
     stake_pool_data.owner = *owner.key;
     stake_pool_data.state = StakePoolState::Initialized;
     stake_pool_data.genesis_timestamp = Self::current_timestamp()?;
     stake_pool_data.total_shares = 0;
     stake_pool_data.mint_share = *mint_share_acc.key;
-    stake_pool_data.vault = *vault_acc.key;
     stake_pool_data.mint_token = *mint_token_acc.key;
     stake_pool_data.treasury_token = *treasury_token_acc.key;
     stake_pool_data.reward = reward;
@@ -613,9 +596,21 @@ impl Processor {
     let compensation = stake_pool_data.compensation;
     let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
+    msg!("Debug: delay={:?} reward={:?}", delay, reward);
     let current_total_shares = stake_pool_data.total_shares;
+    msg!(
+      "Debug: (starting) state = ({:?}, {:?}, {:?})",
+      shares,
+      debt,
+      compensation
+    );
     // Fully havest
     let next_total_shares = current_total_shares; // Havest doesn't change the total shares
+    msg!(
+      "Debug: total shares = ({:?}, {:?})",
+      current_total_shares,
+      next_total_shares
+    );
     let (_shares, debt, compensation) = Pattern::fully_havest(
       shares,
       debt,
@@ -626,7 +621,14 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
+    msg!(
+      "Debug: (after fully havest) state = ({:?}, {:?}, {:?})",
+      shares,
+      debt,
+      compensation
+    );
     let yeild = debt.checked_sub(debt_data.debt).ok_or(AppError::Overflow)? as u64;
+    msg!("Debug: yeild = {:?}", yeild);
 
     // Havest
     XSPLT::transfer(
@@ -740,37 +742,10 @@ impl Processor {
       amount,
       treasury_sen_acc,
       dst_sen_acc,
-      owner,
+      treasurer,
       splt_program,
       seed,
     )?;
-
-    Ok(())
-  }
-
-  pub fn earn(amount: u64, program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let accounts_iter = &mut accounts.iter();
-    let owner = next_account_info(accounts_iter)?;
-    let stake_pool_acc = next_account_info(accounts_iter)?;
-    let vault_acc = next_account_info(accounts_iter)?;
-    let dst_acc = next_account_info(accounts_iter)?;
-    let treasurer = next_account_info(accounts_iter)?;
-    let splt_program = next_account_info(accounts_iter)?;
-
-    Self::is_program(program_id, &[stake_pool_acc])?;
-    Self::is_signer(&[owner])?;
-    Self::is_stake_pool_owner(owner, stake_pool_acc)?;
-
-    let stake_pool_data = StakePool::unpack(&stake_pool_acc.data.borrow())?;
-    let seed: &[&[&[u8]]] = &[&[&Self::safe_seed(stake_pool_acc, treasurer, program_id)?[..]]];
-    if stake_pool_data.vault != *vault_acc.key {
-      return Err(AppError::InvalidOwner.into());
-    }
-    if amount == 0 {
-      return Err(AppError::ZeroValue.into());
-    }
-    // Transfer earning
-    XSPLT::transfer(amount, vault_acc, dst_acc, treasurer, splt_program, seed)?;
 
     Ok(())
   }
