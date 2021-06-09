@@ -6,7 +6,7 @@ const PRECISION: u64 = 1000000000000000000; // 10^18
 
 ///
 /// Farming Patterns
-/// Every actions can be generalize by the following pattern of flow
+/// Every actions can be generalized by the following pattern of flow
 /// Havest -> Unstake -> Stake
 ///
 pub struct Pattern {}
