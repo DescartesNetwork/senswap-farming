@@ -324,21 +324,9 @@ impl Processor {
     let compensation = stake_pool_data.compensation;
     let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
-    msg!("Debug: delay={:?} reward={:?}", delay, reward);
     let current_total_shares = stake_pool_data.total_shares;
-    msg!(
-      "Debug: (starting) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     // Fully havest
     let next_total_shares = current_total_shares; // Havest doesn't change the total shares
-    msg!(
-      "Debug: total shares = ({:?}, {:?})",
-      current_total_shares,
-      next_total_shares
-    );
     let (shares, debt, compensation) = Pattern::fully_havest(
       shares,
       debt,
@@ -349,24 +337,12 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: (after fully havest) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     let yeild = debt.checked_sub(debt_data.debt).ok_or(AppError::Overflow)? as u64;
-    msg!("Debug: yeild = {:?}", yeild);
     // Fully unstake
     let next_total_shares = current_total_shares
       .checked_sub(shares)
       .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: total shares = ({:?}, {:?})",
-      current_total_shares,
-      next_total_shares
-    );
-    let (shares, debt, compensation) = Pattern::fully_unstake(
+    let (_, debt, compensation) = Pattern::fully_unstake(
       shares,
       debt,
       compensation,
@@ -376,12 +352,6 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: (after fully unstake) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     // Fully stake
     let shares = share_data
       .amount
@@ -391,12 +361,7 @@ impl Processor {
     let next_total_shares = current_total_shares
       .checked_add(shares)
       .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: total shares = ({:?}, {:?})",
-      current_total_shares,
-      next_total_shares
-    );
-    let (shares, debt, compensation) = Pattern::fully_stake(
+    let (_, debt, compensation) = Pattern::fully_stake(
       shares,
       debt,
       compensation,
@@ -406,12 +371,6 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: (after fully stake) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
 
     // Havest
     XSPLT::transfer(
@@ -488,21 +447,9 @@ impl Processor {
     let compensation = stake_pool_data.compensation;
     let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
-    msg!("Debug: delay={:?} reward={:?}", delay, reward);
     let current_total_shares = stake_pool_data.total_shares;
-    msg!(
-      "Debug: (starting) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     // Fully havest
     let next_total_shares = current_total_shares; // Havest all before unstaking
-    msg!(
-      "Debug: total shares = ({:?}, {:?})",
-      current_total_shares,
-      next_total_shares
-    );
     let (shares, debt, compensation) = Pattern::fully_havest(
       shares,
       debt,
@@ -513,24 +460,12 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: (after fully havest) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     let yeild = debt.checked_sub(debt_data.debt).ok_or(AppError::Overflow)? as u64;
-    msg!("Debug: yeild = {:?}", yeild);
     // Fully unstake
     let next_total_shares = current_total_shares
       .checked_sub(shares)
       .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: total shares = ({:?}, {:?})",
-      current_total_shares,
-      next_total_shares
-    );
-    let (shares, debt, compensation) = Pattern::fully_unstake(
+    let (_, debt, compensation) = Pattern::fully_unstake(
       shares,
       debt,
       compensation,
@@ -540,12 +475,6 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: (after fully unstake) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     // Fully stake
     let shares = share_data
       .amount
@@ -555,12 +484,7 @@ impl Processor {
     let next_total_shares = current_total_shares
       .checked_add(shares)
       .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: total shares = ({:?}, {:?})",
-      current_total_shares,
-      next_total_shares
-    );
-    let (shares, debt, compensation) = Pattern::fully_stake(
+    let (_, debt, compensation) = Pattern::fully_stake(
       shares,
       debt,
       compensation,
@@ -570,12 +494,6 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: (after fully stake) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
 
     // Havest
     XSPLT::transfer(
@@ -587,14 +505,7 @@ impl Processor {
       seed,
     )?;
     // Unstake token
-    XSPLT::burn(
-      amount,
-      share_acc,
-      mint_share_acc,
-      owner,
-      splt_program,
-      &[],
-    )?;
+    XSPLT::burn(amount, share_acc, mint_share_acc, owner, splt_program, &[])?;
     XSPLT::transfer(
       amount,
       treasury_token_acc,
@@ -653,22 +564,10 @@ impl Processor {
     let compensation = stake_pool_data.compensation;
     let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
-    msg!("Debug: delay={:?} reward={:?}", delay, reward);
     let current_total_shares = stake_pool_data.total_shares;
-    msg!(
-      "Debug: (starting) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     // Fully havest
     let next_total_shares = current_total_shares; // Havest doesn't change the total shares
-    msg!(
-      "Debug: total shares = ({:?}, {:?})",
-      current_total_shares,
-      next_total_shares
-    );
-    let (_shares, debt, compensation) = Pattern::fully_havest(
+    let (_, debt, compensation) = Pattern::fully_havest(
       shares,
       debt,
       compensation,
@@ -678,14 +577,7 @@ impl Processor {
       next_total_shares,
     )
     .ok_or(AppError::Overflow)?;
-    msg!(
-      "Debug: (after fully havest) state = ({:?}, {:?}, {:?})",
-      shares,
-      debt,
-      compensation
-    );
     let yeild = debt.checked_sub(debt_data.debt).ok_or(AppError::Overflow)? as u64;
-    msg!("Debug: yeild = {:?}", yeild);
 
     // Havest
     XSPLT::transfer(

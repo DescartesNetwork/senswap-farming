@@ -1,6 +1,5 @@
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
-use solana_program::msg;
 
 const PRECISION: u64 = 1000000000000000000; // 10^18
 
@@ -89,12 +88,6 @@ impl Pattern {
     let new_compensation = if next_fraction == BigInt::from(0u64) {
       BigInt::from(0u64)
     } else {
-      msg!(
-        "unstake {:?} {:?} {:?}",
-        compensation.to_i128()?,
-        current_fraction.to_u128()?,
-        next_fraction.to_u128()?
-      );
       compensation.clone() - (next_fraction.clone() - current_fraction.clone()) * delay.clone()
     };
     Some((0, 0, new_compensation.to_i128()?))
@@ -125,12 +118,6 @@ impl Pattern {
     let new_compensation = if current_fraction == BigInt::from(0u64) {
       BigInt::from(0u64)
     } else {
-      msg!(
-        "stake {:?} {:?} {:?}",
-        compensation.to_i128()?,
-        current_fraction.to_u128()?,
-        next_fraction.to_u128()?
-      );
       compensation.clone() + (current_fraction.clone() - next_fraction.clone()) * delay.clone()
     };
     let new_debt = (next_fraction.clone() * delay.clone() + new_compensation.clone())
