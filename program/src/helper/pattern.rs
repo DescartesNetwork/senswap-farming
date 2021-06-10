@@ -6,7 +6,7 @@ const PRECISION: u64 = 1000000000000000000; // 10^18
 ///
 /// Farming Patterns
 /// Every actions can be generalized by the following pattern of flow
-/// Havest -> Unstake -> Stake
+/// Harvest -> Unstake -> Stake
 ///
 pub struct Pattern {}
 
@@ -23,9 +23,9 @@ impl Pattern {
   }
 
   ///
-  /// Havest all
+  /// Harvest all
   ///
-  pub fn fully_havest(
+  pub fn fully_harvest(
     shares: u64,
     debt: u128,
     compensation: i128,
@@ -55,7 +55,7 @@ impl Pattern {
   }
 
   ///
-  /// The unstake_pattern is only called when fully havested
+  /// The unstake_pattern is only called when fully harvested
   ///
   pub fn fully_unstake(
     shares: u64,
@@ -76,7 +76,7 @@ impl Pattern {
     // Compute current & next fraction = reward / total shares
     let (current_fraction, precision) = Self::fractionalize_reward(reward, current_total_shares)?;
     let (next_fraction, _) = Self::fractionalize_reward(reward, next_total_shares)?;
-    // Whether havested
+    // Whether harvested
     let expected_debt = ((current_fraction.clone() * delay.clone() + compensation.clone())
       * shares.clone()
       / precision.clone())

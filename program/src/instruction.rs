@@ -8,7 +8,7 @@ pub enum AppInstruction {
   InitializeAccount,
   Stake { amount: u64 },
   Unstake { amount: u64 },
-  Havest,
+  Harvest,
   FreezeStakePool,
   ThawStakePool,
   Seed { amount: u64 },
@@ -51,7 +51,7 @@ impl AppInstruction {
           .ok_or(AppError::InvalidInstruction)?;
         Self::Unstake { amount }
       }
-      4 => Self::Havest,
+      4 => Self::Harvest,
       5 => Self::FreezeStakePool,
       6 => Self::ThawStakePool,
       7 => {

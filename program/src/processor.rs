@@ -52,9 +52,9 @@ impl Processor {
         Self::unstake(amount, program_id, accounts)
       }
 
-      AppInstruction::Havest {} => {
-        msg!("Calling Havest function");
-        Self::havest(program_id, accounts)
+      AppInstruction::Harvest {} => {
+        msg!("Calling Harvest function");
+        Self::harvest(program_id, accounts)
       }
 
       AppInstruction::FreezeStakePool {} => {
@@ -325,9 +325,9 @@ impl Processor {
     let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
     let current_total_shares = stake_pool_data.total_shares;
-    // Fully havest
-    let next_total_shares = current_total_shares; // Havest doesn't change the total shares
-    let (shares, debt, compensation) = Pattern::fully_havest(
+    // Fully harvest
+    let next_total_shares = current_total_shares; // Harvest doesn't change the total shares
+    let (shares, debt, compensation) = Pattern::fully_harvest(
       shares,
       debt,
       compensation,
@@ -372,7 +372,7 @@ impl Processor {
     )
     .ok_or(AppError::Overflow)?;
 
-    // Havest
+    // Harvest
     XSPLT::transfer(
       yeild,
       treasury_sen_acc,
@@ -448,9 +448,9 @@ impl Processor {
     let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
     let current_total_shares = stake_pool_data.total_shares;
-    // Fully havest
-    let next_total_shares = current_total_shares; // Havest all before unstaking
-    let (shares, debt, compensation) = Pattern::fully_havest(
+    // Fully harvest
+    let next_total_shares = current_total_shares; // Harvest all before unstaking
+    let (shares, debt, compensation) = Pattern::fully_harvest(
       shares,
       debt,
       compensation,
@@ -495,7 +495,7 @@ impl Processor {
     )
     .ok_or(AppError::Overflow)?;
 
-    // Havest
+    // Harvest
     XSPLT::transfer(
       yeild,
       treasury_sen_acc,
@@ -526,7 +526,7 @@ impl Processor {
     Ok(())
   }
 
-  pub fn havest(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+  pub fn harvest(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
@@ -565,9 +565,9 @@ impl Processor {
     let delay = Self::estimate_delay(stake_pool_data)?;
     let reward = stake_pool_data.reward;
     let current_total_shares = stake_pool_data.total_shares;
-    // Fully havest
-    let next_total_shares = current_total_shares; // Havest doesn't change the total shares
-    let (_, debt, compensation) = Pattern::fully_havest(
+    // Fully harvest
+    let next_total_shares = current_total_shares; // Harvest doesn't change the total shares
+    let (_, debt, compensation) = Pattern::fully_harvest(
       shares,
       debt,
       compensation,
@@ -579,7 +579,7 @@ impl Processor {
     .ok_or(AppError::Overflow)?;
     let yeild = debt.checked_sub(debt_data.debt).ok_or(AppError::Overflow)? as u64;
 
-    // Havest
+    // Harvest
     XSPLT::transfer(
       yeild,
       treasury_sen_acc,
