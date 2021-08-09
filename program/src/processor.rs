@@ -108,8 +108,28 @@ impl Processor {
     let sysvar_rent_acc = next_account_info(accounts_iter)?;
     let splata_program = next_account_info(accounts_iter)?;
 
+    // Rent stake pool account
+    Self::alloc_account(
+      StakePool::LEN,
+      stake_pool_acc,
+      payer,
+      program_id,
+      sysvar_rent_acc,
+      system_program,
+    )?;
+    // Rent mint share account
+    Self::alloc_account(
+      Mint::LEN,
+      mint_share_acc,
+      payer,
+      splt_program.key,
+      sysvar_rent_acc,
+      system_program,
+    )?;
+
     Self::is_program(program_id, &[stake_pool_acc])?;
-    Self::is_signer(&[payer, stake_pool_acc])?;
+    Self::is_program(splt_program.key, &[mint_share_acc])?;
+    Self::is_signer(&[payer, stake_pool_acc, mint_share_acc])?;
 
     let mut stake_pool_data = StakePool::unpack_unchecked(&stake_pool_acc.data.borrow())?;
     let mint_share_data = Mint::unpack_unchecked(&mint_share_acc.data.borrow())?;
@@ -134,7 +154,7 @@ impl Processor {
       splt_program,
       sysvar_rent_acc,
       splata_program,
-      seed,
+      &[],
     )?;
 
     // Initialize treasury sen
@@ -147,13 +167,13 @@ impl Processor {
       splt_program,
       sysvar_rent_acc,
       splata_program,
-      seed,
+      &[],
     )?;
 
     // Initialize mint share
-    let mint_token_data = Mint::unpack_unchecked(&mint_token_acc.data.borrow())?;
+    let mint_sen_data = Mint::unpack_unchecked(&mint_sen_acc.data.borrow())?;
     XSPLT::initialize_mint(
-      mint_token_data.decimals,
+      mint_sen_data.decimals,
       mint_share_acc,
       treasurer,
       proof_acc,
@@ -789,5 +809,39 @@ impl Processor {
     let delay =
       (current_timestamp - stake_pool_data.genesis_timestamp) as u64 / stake_pool_data.period;
     Ok(delay)
+  }
+
+  pub fn alloc_account<'a>(
+    space: usize,
+    target_acc: &AccountInfo<'a>,
+    payer_acc: &AccountInfo<'a>,
+    owner_program_id: &Pubkey,
+    sysvar_rent_acc: &AccountInfo<'a>,
+    system_acc: &AccountInfo<'a>,
+  ) -> ProgramResult {
+    // Fund the associated token account with the minimum balance to be rent exempt
+    let rent = &Rent::from_account_info(sysvar_rent_acc)?;
+    let required_lamports = rent
+      .minimum_balance(space)
+      .max(1)
+      .saturating_sub(target_acc.lamports());
+
+    if required_lamports > 0 {
+      invoke(
+        &system_instruction::transfer(payer_acc.key, target_acc.key, required_lamports),
+        &[payer_acc.clone(), target_acc.clone(), system_acc.clone()],
+      )?;
+    }
+
+    invoke(
+      &system_instruction::allocate(target_acc.key, space as u64),
+      &[target_acc.clone(), target_acc.clone(), system_acc.clone()],
+    )?;
+
+    invoke(
+      &system_instruction::assign(target_acc.key, owner_program_id),
+      &[target_acc.clone(), target_acc.clone(), system_acc.clone()],
+    )?;
+    Ok(())
   }
 }
