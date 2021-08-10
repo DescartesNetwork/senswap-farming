@@ -81,6 +81,11 @@ impl Processor {
         msg!("Calling TransferStakePoolOwnership function");
         Self::transfer_stake_pool_ownership(program_id, accounts)
       }
+
+      AppInstruction::CloseDebtAccount {} => {
+        msg!("Calling CloseDebtAccount function");
+        Self::close_debt_account(program_id, accounts)
+      }
     }
   }
 
@@ -736,6 +741,35 @@ impl Processor {
     let mut stake_pool_data = StakePool::unpack(&stake_pool_acc.data.borrow())?;
     stake_pool_data.owner = *new_owner.key;
     StakePool::pack(stake_pool_data, &mut stake_pool_acc.data.borrow_mut())?;
+
+    Ok(())
+  }
+
+  pub fn close_debt_account(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let owner = next_account_info(accounts_iter)?;
+    let stake_pool_acc = next_account_info(accounts_iter)?;
+    let share_acc = next_account_info(accounts_iter)?;
+    let debt_acc = next_account_info(accounts_iter)?;
+    let dst_acc = next_account_info(accounts_iter)?;
+
+    Self::is_program(program_id, &[stake_pool_acc, debt_acc])?;
+    Self::is_signer(&[owner])?;
+    Self::is_debt_owner(owner, debt_acc, stake_pool_acc, share_acc)?;
+
+    let mut debt_data = Debt::unpack(&debt_acc.data.borrow())?;
+    if debt_data.debt != 0 || share_acc.lamports() != 0 {
+      return Err(AppError::ZeroValue.into());
+    }
+
+    let debt_starting_lamports = debt_acc.lamports();
+    **dst_acc.lamports.borrow_mut() = debt_starting_lamports
+      .checked_add(debt_acc.lamports())
+      .ok_or(AppError::Overflow)?;
+    **debt_acc.lamports.borrow_mut() = 0;
+
+    debt_data.debt = 0;
+    Debt::pack(debt_data, &mut debt_acc.data.borrow_mut())?;
 
     Ok(())
   }
