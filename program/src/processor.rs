@@ -198,6 +198,7 @@ impl Processor {
     stake_pool_data.reward = reward;
     stake_pool_data.period = period;
     stake_pool_data.compensation = 0;
+    stake_pool_data.mint_sen = *mint_sen_acc.key;
     stake_pool_data.treasury_sen = *treasury_sen_acc.key;
     StakePool::pack(stake_pool_data, &mut stake_pool_acc.data.borrow_mut())?;
 
