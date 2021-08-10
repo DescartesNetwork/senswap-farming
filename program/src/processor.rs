@@ -764,7 +764,7 @@ impl Processor {
 
     let debt_starting_lamports = debt_acc.lamports();
     **dst_acc.lamports.borrow_mut() = debt_starting_lamports
-      .checked_add(debt_acc.lamports())
+      .checked_add(dst_acc.lamports())
       .ok_or(AppError::Overflow)?;
     **debt_acc.lamports.borrow_mut() = 0;
 
