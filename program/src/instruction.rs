@@ -14,7 +14,8 @@ pub enum AppInstruction {
   Seed { amount: u64 },
   Unseed { amount: u64 },
   TransferStakePoolOwnership,
-  CloseDebtAccount,
+  CloseDebt,
+  CloseStakePool,
 }
 impl AppInstruction {
   pub fn unpack(instruction: &[u8]) -> Result<Self, ProgramError> {
@@ -72,7 +73,8 @@ impl AppInstruction {
         Self::Unseed { amount }
       }
       9 => Self::TransferStakePoolOwnership,
-      10 => Self::CloseDebtAccount,
+      10 => Self::CloseDebt,
+      11 => Self::CloseStakePool,
       _ => return Err(AppError::InvalidInstruction.into()),
     })
   }

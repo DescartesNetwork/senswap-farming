@@ -82,9 +82,14 @@ impl Processor {
         Self::transfer_stake_pool_ownership(program_id, accounts)
       }
 
-      AppInstruction::CloseDebtAccount {} => {
-        msg!("Calling CloseDebtAccount function");
-        Self::close_debt_account(program_id, accounts)
+      AppInstruction::CloseDebt {} => {
+        msg!("Calling CloseDebt function");
+        Self::close_debt(program_id, accounts)
+      }
+
+      AppInstruction::CloseStakePool {} => {
+        msg!("Calling CloseStakePool function");
+        Self::close_stake_pool(program_id, accounts)
       }
     }
   }
@@ -176,9 +181,9 @@ impl Processor {
     )?;
 
     // Initialize mint share
-    let mint_sen_data = Mint::unpack_unchecked(&mint_sen_acc.data.borrow())?;
+    let mint_token_data = Mint::unpack_unchecked(&mint_token_acc.data.borrow())?;
     XSPLT::initialize_mint(
-      mint_sen_data.decimals,
+      mint_token_data.decimals,
       mint_share_acc,
       treasurer,
       proof_acc,
@@ -746,7 +751,7 @@ impl Processor {
     Ok(())
   }
 
-  pub fn close_debt_account(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+  pub fn close_debt(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
@@ -771,6 +776,30 @@ impl Processor {
 
     debt_data.debt = 0;
     Debt::pack(debt_data, &mut debt_acc.data.borrow_mut())?;
+
+    Ok(())
+  }
+
+  pub fn close_stake_pool(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let accounts_iter = &mut accounts.iter();
+    let owner = next_account_info(accounts_iter)?;
+    let stake_pool_acc = next_account_info(accounts_iter)?;
+    let dst_acc = next_account_info(accounts_iter)?;
+
+    Self::is_program(program_id, &[stake_pool_acc])?;
+    Self::is_signer(&[owner])?;
+    Self::is_stake_pool_owner(owner, stake_pool_acc)?;
+
+    let stake_pool_data = StakePool::unpack(&stake_pool_acc.data.borrow())?;
+    if stake_pool_data.total_shares != 0 {
+      return Err(AppError::ZeroValue.into());
+    }
+
+    let stake_pool_starting_lamports = stake_pool_acc.lamports();
+    **dst_acc.lamports.borrow_mut() = stake_pool_starting_lamports
+      .checked_add(dst_acc.lamports())
+      .ok_or(AppError::Overflow)?;
+    **stake_pool_acc.lamports.borrow_mut() = 0;
 
     Ok(())
   }
