@@ -5,7 +5,7 @@ use std::convert::TryInto;
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppInstruction {
   InitializeStakePool { reward: u64, period: u64 },
-  InitializeAccount,
+  InitializeAccounts,
   Stake { amount: u64 },
   Unstake { amount: u64 },
   Harvest,
@@ -36,7 +36,7 @@ impl AppInstruction {
           .ok_or(AppError::InvalidInstruction)?;
         Self::InitializeStakePool { reward, period }
       }
-      1 => Self::InitializeAccount,
+      1 => Self::InitializeAccounts,
       2 => {
         let amount = rest
           .get(..8)

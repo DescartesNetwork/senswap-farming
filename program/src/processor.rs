@@ -37,9 +37,9 @@ impl Processor {
         Self::initialize_stake_pool(reward, period, program_id, accounts)
       }
 
-      AppInstruction::InitializeAccount {} => {
-        msg!("Calling InitializeAccount function");
-        Self::initialize_account(program_id, accounts)
+      AppInstruction::InitializeAccounts {} => {
+        msg!("Calling InitializeAccounts function");
+        Self::initialize_accounts(program_id, accounts)
       }
 
       AppInstruction::Stake { amount } => {
@@ -126,6 +126,7 @@ impl Processor {
       program_id,
       sysvar_rent_acc,
       system_program,
+      &[],
     )?;
     // Rent mint share account
     Self::alloc_account(
@@ -135,6 +136,7 @@ impl Processor {
       splt_program.key,
       sysvar_rent_acc,
       system_program,
+      &[],
     )?;
 
     Self::is_program(program_id, &[stake_pool_acc])?;
@@ -210,13 +212,15 @@ impl Processor {
     Ok(())
   }
 
-  pub fn initialize_account(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+  pub fn initialize_accounts(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let payer = next_account_info(accounts_iter)?;
     let owner = next_account_info(accounts_iter)?;
     let stake_pool_acc = next_account_info(accounts_iter)?;
     let mint_share_acc = next_account_info(accounts_iter)?;
+    let mint_sen_acc = next_account_info(accounts_iter)?;
 
+    let reward_acc = next_account_info(accounts_iter)?;
     let share_acc = next_account_info(accounts_iter)?;
     let debt_acc = next_account_info(accounts_iter)?;
 
@@ -230,18 +234,35 @@ impl Processor {
 
     StakePool::unpack(&stake_pool_acc.data.borrow())?;
 
+    // Initialize reward account
+    if (&reward_acc.data.borrow()).len() == 0 {
+      XSPLATA::initialize_account(
+        payer,
+        reward_acc,
+        owner,
+        mint_sen_acc,
+        system_program,
+        splt_program,
+        sysvar_rent_acc,
+        splata_program,
+        &[],
+      )?;
+    }
+
     // Initilized share account
-    XSPLATA::initialize_account(
-      payer,
-      share_acc,
-      owner,
-      mint_share_acc,
-      system_program,
-      splt_program,
-      sysvar_rent_acc,
-      splata_program,
-      &[],
-    )?;
+    if (&share_acc.data.borrow()).len() == 0 {
+      XSPLATA::initialize_account(
+        payer,
+        share_acc,
+        owner,
+        mint_share_acc,
+        system_program,
+        splt_program,
+        sysvar_rent_acc,
+        splata_program,
+        &[],
+      )?;
+    }
 
     // Validate debt account address
     let (key, bump_seed) = Pubkey::find_program_address(
@@ -252,38 +273,24 @@ impl Processor {
       ],
       program_id,
     );
+    if key != *debt_acc.key {
+      return Err(AppError::InvalidOwner.into());
+    }
+    // Rent debt account
     let seed: &[&[u8]] = &[
       &owner.key.to_bytes(),
       &stake_pool_acc.key.to_bytes(),
       &program_id.to_bytes(),
       &[bump_seed],
     ];
-    if key != *debt_acc.key {
-      return Err(AppError::InvalidOwner.into());
-    }
-    // Rent space
-    let rent = &Rent::from_account_info(sysvar_rent_acc)?;
-    let required_lamports = rent
-      .minimum_balance(Debt::LEN)
-      .max(1)
-      .saturating_sub(debt_acc.lamports());
-    if required_lamports > 0 {
-      invoke(
-        &system_instruction::transfer(&payer.key, debt_acc.key, required_lamports),
-        &[payer.clone(), debt_acc.clone(), system_program.clone()],
-      )?;
-    }
-    // Allocate space
-    invoke_signed(
-      &system_instruction::allocate(debt_acc.key, Debt::LEN as u64),
-      &[debt_acc.clone(), system_program.clone()],
-      &[&seed],
-    )?;
-    // Assign owner to farming program
-    invoke_signed(
-      &system_instruction::assign(debt_acc.key, &program_id),
-      &[debt_acc.clone(), system_program.clone()],
-      &[&seed],
+    Self::alloc_account(
+      Debt::LEN,
+      debt_acc,
+      payer,
+      program_id,
+      sysvar_rent_acc,
+      system_program,
+      &[seed],
     )?;
 
     // Assign data
@@ -882,6 +889,7 @@ impl Processor {
     owner_program_id: &Pubkey,
     sysvar_rent_acc: &AccountInfo<'a>,
     system_acc: &AccountInfo<'a>,
+    seed: &[&[&[u8]]],
   ) -> ProgramResult {
     // Fund the associated token account with the minimum balance to be rent exempt
     let rent = &Rent::from_account_info(sysvar_rent_acc)?;
@@ -897,14 +905,16 @@ impl Processor {
       )?;
     }
 
-    invoke(
+    invoke_signed(
       &system_instruction::allocate(target_acc.key, space as u64),
       &[target_acc.clone(), target_acc.clone(), system_acc.clone()],
+      seed,
     )?;
 
-    invoke(
+    invoke_signed(
       &system_instruction::assign(target_acc.key, owner_program_id),
       &[target_acc.clone(), target_acc.clone(), system_acc.clone()],
+      seed,
     )?;
     Ok(())
   }
